@@ -1,0 +1,270 @@
+Select *
+From PortfoglioProject..['Covid-deaths$']
+Order by 3,4
+
+Select *
+From PortfoglioProject..['Covid-Vaccinations$']
+Order by 3,4
+
+---Tani do zgjedhim te dhenat me te cilat do punojme
+
+Select location,date,New_cases,total_cases,total_deaths,population
+From PortfoglioProject..['Covid-deaths$']
+Order by 1,2
+
+---Do shohim Total_cases vs Total_deaths
+---Kjo tregon mundesine/%/probabilitetin e vdekjes nese te ze covid ne vendin tende
+--(shows likelihood of dying,if you contract covid in your country)
+
+Select location,date,total_cases,total_deaths,CONVERT( decimal,total_deaths) / Convert( decimal,total_cases)*100  AS DeathPercentage
+From PortfoglioProject..['Covid-deaths$']
+Where location like '%bani%'
+Order by 1,2
+
+
+-----Looking at total_cases vs Population
+---Shows what percentage of population got Covid
+
+Select location,date,total_cases,Population,CONVERT( decimal,total_cases) / Convert(bigint,population)*100  AS PopulationPercentage
+From PortfoglioProject..['Covid-deaths$']
+--Where location like '%bani%'
+Order by 1,2
+
+-----Looking at Countries with Highest Infection Rate compared to Population 
+
+Select location,Population ,Max(total_cases) HighestInfectionCount,MAX (CONVERT( decimal,total_cases) / Convert(bigint,population))*100  AS PercentPopulationInfected
+From PortfoglioProject..['Covid-deaths$']
+--Where location like '%bani%'
+Group By location,population
+Order by PercentPopulationInfected Desc
+
+
+
+---- SHowing Countries with Highest Death Count per Population
+
+Select location,Max(Convert(int,total_deaths)) TotalDeathCount
+From PortfoglioProject..['Covid-deaths$']
+--Where location like '%bani%'
+Where continent is not Null
+Group By location
+Order by TotalDeathCount Desc
+
+Select location,Max(Convert(int,total_deaths)) TotalDeathCount
+From PortfoglioProject..['Covid-deaths$']
+--Where location like '%bani%'
+Where continent is Null
+Group By location
+Order by TotalDeathCount Desc
+
+--LET'S BREAK THINGS DOWN BY CONTINENT
+
+
+Select continent,Max(Convert(int,total_deaths)) TotalDeathCount
+From PortfoglioProject..['Covid-deaths$']
+--Where location like '%bani%'
+Where continent is not Null
+Group By continent
+Order by TotalDeathCount Desc
+
+
+----Global Numbers
+--*The result per day*
+
+SET ARITHABORT OFF;
+SET ANSI_WARNINGS OFF;
+
+Select date,SUM(new_cases) as total_cases,SUM(convert(int,new_deaths)) as total_deaths, SUM (convert(int,new_deaths))/SUM(new_cases)* 100 As DeathPercantage
+From PortfoglioProject..['Covid-deaths$']
+Where continent is NULL
+Group By date
+Order by 1,2
+
+
+--Total result for the whole world
+
+Select SUM(new_cases) as total_cases,SUM(convert(int,new_deaths)) as total_deaths, SUM (convert(int,new_deaths))/SUM(new_cases)* 100 As DeathPercantage
+From PortfoglioProject..['Covid-deaths$']
+Where continent is NULL
+--Group By date
+Order by 1,2
+
+
+
+---***Shohim rastin e db tjeter,covid-vaccination***---
+--Do bejme JOIN midis tabelave
+
+--Looking at Total Population vs Vaccinations
+
+Select Dea.continent,Dea.location,Dea.date,Dea.population,Vacc.new_vaccinations
+,SUM(CONVERT(bigint,Vacc.new_vaccinations)) OVER (Partition by dea.Location Order by dea.location,dea.date) RollingPeopleVaccinated
+
+--(RollingPeopleVaccinated/population)*100
+
+From PortfoglioProject..['Covid-deaths$'] Dea 
+Join PortfoglioProject..['Covid-Vaccinations$'] Vacc
+ON Dea.location = Vacc.location
+and Dea.date = Vacc.date
+Where dea.continent is not NULL
+Order by 2,3
+
+
+--We want to know how many people in that country have been vaccinated
+--**Since we can't calculate it with the column that we have just create it(rollingpeoplevaccinated),we are going to use CTE or TempTable
+--(RollingPeopleVaccinated/population)*100!! it gives an error to us
+
+--CTE
+
+With PopvsVacc (continent,location,date,population,new_vaccinations,RollingPeopleVaccinated)
+as
+(Select Dea.continent,Dea.location,Dea.date,Dea.population,Vacc.new_vaccinations
+,SUM(CONVERT(bigint,Vacc.new_vaccinations)) OVER (Partition by dea.Location Order by dea.location,dea.date) RollingPeopleVaccinated
+--(RollingPeopleVaccinated/population)*100
+From PortfoglioProject..['Covid-deaths$'] Dea 
+Join PortfoglioProject..['Covid-Vaccinations$'] Vacc
+ON Dea.location = Vacc.location
+and Dea.date = Vacc.date
+Where dea.continent is not NULL
+--Order by 2,3
+)
+Select *,(RollingPeopleVaccinated/population)*100
+From PopvsVacc
+
+--this indicator considers all the vaccine shots given and since one individual can receive 2+,that's why we see thoe values--**
+
+
+
+--TEMP TABLE
+
+Drop Table if exists #PercentPopulationVacc
+GO
+Create table #PercentPopulationVacc
+(
+Continent nvarchar(255),
+Location nvarchar(255),
+Date datetime,
+Population bigint,
+New_vaccinations int,
+RollingPeopleVaccinated bigint,
+)
+
+
+Insert into #PercentPopulationVacc
+Select Dea.continent,Dea.location,Dea.date,Dea.population,Vacc.new_vaccinations
+,SUM(CONVERT(bigint,Vacc.new_vaccinations)) OVER (Partition by dea.Location Order by dea.location,dea.date) RollingPeopleVaccinated
+--(RollingPeopleVaccinated/population)*100
+From PortfoglioProject..['Covid-deaths$'] Dea 
+Join PortfoglioProject..['Covid-Vaccinations$'] Vacc
+ON Dea.location = Vacc.location
+and Dea.date = Vacc.date
+--Where dea.continent is not NULL
+--Order by 2,3
+
+Select *,(RollingPeopleVaccinated/population)*100
+From  #PercentPopulationVacc
+
+
+----Creating view to store data for later visualizations
+
+1.
+Create View 
+PercentPopulationVacc As
+Select Dea.continent,Dea.location,Dea.date,Dea.population,Vacc.new_vaccinations
+,SUM(CONVERT(bigint,Vacc.new_vaccinations)) OVER (Partition by dea.Location Order by dea.location,dea.date) RollingPeopleVaccinated
+--(RollingPeopleVaccinated/population)*100
+From PortfoglioProject..['Covid-deaths$'] Dea 
+Join PortfoglioProject..['Covid-Vaccinations$'] Vacc
+ON Dea.location = Vacc.location
+and Dea.date = Vacc.date
+Where dea.continent is not NULL
+--Order by 2,3
+
+Select *
+From PercentPopulationVacc
+
+--Work View...some other view cases from what we did before--
+
+2.
+Create View 
+TotalDeathCount AS
+Select continent,Max(Convert(int,total_deaths)) TotalDeathCount
+From PortfoglioProject..['Covid-deaths$']
+--Where location like '%bani%'
+Where continent is not Null
+Group By continent
+--Order by TotalDeathCount Desc
+
+Select*
+From TotalDeathCount
+
+
+
+3.
+Create View 
+HighestDeathCountPerState As
+Select location,Max(Convert(int,total_deaths)) TotalDeathCount
+From PortfoglioProject..['Covid-deaths$']
+--Where location like '%bani%'
+Where continent is not Null
+Group By location
+--Order by TotalDeathCount Desc
+
+Select*
+From TotalDeathCount
+
+4.
+Create VIEW 
+HighestDeathCountPerContinents As
+Select continent,Max(Convert(int,total_deaths)) TotalDeathCount
+From PortfoglioProject..['Covid-deaths$']
+--Where location like '%bani%'
+Where continent is not Null
+Group By continent
+--Order by TotalDeathCount Desc
+
+Select*
+From TotalDeathCount
+
+5.
+Create View 
+PercentPopulationInfected As
+Select location,Population ,Max(total_cases) HighestInfectionCount,MAX (CONVERT( decimal,total_cases) / Convert(bigint,population))*100  AS PercentPopulationInfected
+From PortfoglioProject..['Covid-deaths$']
+--Where location like '%bani%'
+Group By location,population
+--Order by PercentPopulationInfected Desc
+
+Select*
+From PercentPopulationInfected
+
+
+6.
+Create View 
+PopulationPercentage AS
+Select location,date,total_cases,Population,CONVERT( decimal,total_cases) / Convert(bigint,population)*100  AS PopulationPercentage
+From PortfoglioProject..['Covid-deaths$']
+
+Select*
+From PopulationPercentage
+
+7.
+Create View 
+DeathPercentage AS
+Select location,date,total_cases,total_deaths,CONVERT( decimal,total_deaths) / Convert( decimal,total_cases)*100  AS DeathPercentage
+From PortfoglioProject..['Covid-deaths$']
+Where location like '%bani%'
+--Order by 1,2
+
+Select*
+From DeathPercentage
+
+8.
+Create View
+PartofTable AS
+Select location,date,New_cases,total_cases,total_deaths,population
+From PortfoglioProject..['Covid-deaths$']
+--Order by 1,2
+
+Select*
+From PartofTable
+
+
